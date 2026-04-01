@@ -1,0 +1,10 @@
+torch
+transformers
+accelerate
+datasets
+tensorboard
+pyyaml
+tqdm
+safetensors
+pandas
+matplotlib
