@@ -4,7 +4,11 @@ __pycache__/
 .mypy_cache/
 .venv/
 venv/
-outputs/
 logs/
 checkpoints/
-events.out.tfevents*
+
+# Keep TensorBoard logs under outputs/*/cs190c-hw2/, but ignore saved model states.
+outputs/*/checkpoint-*/
+outputs/**/*.safetensors
+outputs/**/*.bin
+outputs/**/*.pkl
