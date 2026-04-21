@@ -7,6 +7,7 @@ from pathlib import Path
 
 import torch
 from torch.utils.data import DataLoader
+from accelerate import Accelerator
 from transformers import AutoTokenizer, LlamaConfig, LlamaForCausalLM, default_data_collator
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -33,7 +34,7 @@ def create_accelerator() -> "Accelerator":
     2. Initialize a basic accelerator for evaluation.
     3. Return the accelerator object.
     """
-    raise NotImplementedError("TODO(student): initialize Accelerator for evaluation.")
+    return Accelerator()
 
 
 def build_eval_dataloader(exp_config: dict, tokenizer) -> DataLoader:
@@ -44,7 +45,26 @@ def build_eval_dataloader(exp_config: dict, tokenizer) -> DataLoader:
     3. Create a DataLoader with `default_data_collator`.
     4. Do not shuffle the evaluation dataloader.
     """
-    raise NotImplementedError("TODO(student): create the evaluation dataloader.")
+    # TODO(student): keep evaluation on the validation split for apples-to-apples comparison.
+    dataset_splits = build_language_modeling_splits(
+        dataset_name=exp_config["dataset_name"],
+        dataset_config_name=exp_config["dataset_config_name"],
+        tokenizer=tokenizer,
+        block_size=exp_config["block_size"],
+        num_preprocessing_workers=exp_config["num_preprocessing_workers"],
+    )
+
+    max_eval_examples = exp_config.get("max_eval_examples")
+    if max_eval_examples is not None:
+        val_size = min(max_eval_examples, len(dataset_splits["validation"]))
+        dataset_splits["validation"] = dataset_splits["validation"].select(range(val_size))
+
+    return DataLoader(
+        dataset_splits["validation"],
+        batch_size=exp_config["per_device_eval_batch_size"],
+        shuffle=False,
+        collate_fn=default_data_collator,
+    )
 
 
 @torch.no_grad()
@@ -59,7 +79,29 @@ def evaluate(accelerator, model, dataloader) -> dict[str, float]:
        - `val_loss`
        - `val_perplexity`
     """
-    raise NotImplementedError("TODO(student): implement the evaluation loop.")
+    model.eval()
+    gathered_losses = []
+
+    for batch in dataloader:
+        outputs = model(**batch)
+        loss = outputs.loss.detach()
+        batch_size = batch["input_ids"].size(0)
+        gathered_loss = accelerator.gather_for_metrics(loss.repeat(batch_size))
+        gathered_losses.append(gathered_loss)
+
+    if not gathered_losses:
+        return {"val_loss": float("nan"), "val_perplexity": float("nan")}
+
+    val_loss = torch.cat(gathered_losses).mean().item()
+    try:
+        val_perplexity = math.exp(val_loss)
+    except OverflowError:
+        val_perplexity = float("inf")
+
+    return {
+        "val_loss": val_loss,
+        "val_perplexity": val_perplexity,
+    }
 
 
 def main() -> None:
@@ -86,6 +128,14 @@ def main() -> None:
     model_config = LlamaConfig(**model_config_dict)
     model = LlamaForCausalLM(model_config)
 
+    eval_dataloader = build_eval_dataloader(exp_config, tokenizer)
+
+    """
+    TODO(student):
+    Prepare the model and dataloader with `accelerator.prepare(...)`.
+    """
+    model, eval_dataloader = accelerator.prepare(model, eval_dataloader)
+
     """
     TODO(student):
     Load the checkpoint weights into the model.
@@ -93,15 +143,7 @@ def main() -> None:
     - `accelerator.load_state(...)` if you save full training state, or
     - `model.load_state_dict(...)` if you save only model weights.
     """
-    raise NotImplementedError("TODO(student): load checkpoint weights before evaluation.")
-
-    eval_dataloader = build_eval_dataloader(exp_config, tokenizer)
-
-    """
-    TODO(student):
-    Prepare the model and dataloader with `accelerator.prepare(...)`.
-    """
-    raise NotImplementedError("TODO(student): prepare the model and dataloader for evaluation.")
+    accelerator.load_state(args.checkpoint_path)
 
     metrics = evaluate(accelerator, model, eval_dataloader)
 

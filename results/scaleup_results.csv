@@ -1,0 +1,2 @@
+run_name,model_config,accelerate_config,learning_rate,max_train_steps,gpus,effective_batch_sequences,tokens_seen,final_val_loss,final_val_perplexity,checkpoint_path,notes
+scaleup_m,configs/models/m.json,accelerate_configs/two_gpu_ddp.yaml,0.001,3000,2,128,196608000,2.4334,11.3970,outputs/scaleup_m/checkpoint-3000,"Part C final run; increases GPUs, total tokens, and effective batch size vs pilot_m_bestlr"

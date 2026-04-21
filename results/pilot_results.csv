@@ -1,0 +1,7 @@
+run_name,model_config,learning_rate,max_train_steps,tokens_seen,final_val_loss,final_val_perplexity,best_checkpoint_path,notes
+pilot_s_lr2e4,configs/models/s.json,0.0002,1000,16384000,3.5246,33.9412,outputs/pilot_s_lr2e4/checkpoint-1000,lr sweep
+pilot_s_lr5e4,configs/models/s.json,0.0005,1000,16384000,3.3941,29.7870,outputs/pilot_s_lr5e4/checkpoint-1000,lr sweep
+pilot_s_lr1e3,configs/models/s.json,0.001,1000,16384000,3.3450,28.3618,outputs/pilot_s_lr1e3/checkpoint-1000,lr sweep; best lr; reuse as S in size sweep
+pilot_xs_bestlr,configs/models/xs.json,0.001,1000,16384000,3.4826,32.5450,outputs/pilot_xs_bestlr/checkpoint-1000,size sweep
+pilot_s_bestlr,configs/models/s.json,0.001,1000,16384000,3.3947,29.8067,outputs/pilot_s_bestlr/checkpoint-1000,size sweep; independent S rerun at best lr
+pilot_m_bestlr,configs/models/m.json,0.001,1000,16384000,3.2912,26.8747,outputs/pilot_m_bestlr/checkpoint-1000,size sweep

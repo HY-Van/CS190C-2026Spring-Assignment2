@@ -8,6 +8,7 @@ from pathlib import Path
 import torch
 from torch.utils.data import DataLoader
 from tqdm.auto import tqdm
+from accelerate import Accelerator
 from transformers import (
     AutoTokenizer,
     LlamaConfig,
@@ -42,7 +43,11 @@ def create_accelerator(exp_config: dict) -> "Accelerator":
        under the experiment output directory.
     5. Return the accelerator object.
     """
-    raise NotImplementedError("TODO(student): initialize and return Accelerator.")
+    return Accelerator(
+        gradient_accumulation_steps=exp_config["gradient_accumulation_steps"],
+        log_with="tensorboard",
+        project_dir=exp_config["output_dir"],
+    )
 
 
 def build_dataloaders(exp_config: dict, tokenizer) -> tuple[DataLoader, DataLoader]:
@@ -54,7 +59,38 @@ def build_dataloaders(exp_config: dict, tokenizer) -> tuple[DataLoader, DataLoad
     4. Shuffle the training loader, but do not shuffle validation.
     5. Return `(train_dataloader, val_dataloader)`.
     """
-    raise NotImplementedError("TODO(student): create train/validation dataloaders.")
+    # TODO(student): reuse the provided dataset builder instead of writing a new dataset pipeline.
+    dataset_splits = build_language_modeling_splits(
+        dataset_name=exp_config["dataset_name"],
+        dataset_config_name=exp_config["dataset_config_name"],
+        tokenizer=tokenizer,
+        block_size=exp_config["block_size"],
+        num_preprocessing_workers=exp_config["num_preprocessing_workers"],
+    )
+
+    max_train_examples = exp_config.get("max_train_examples")
+    if max_train_examples is not None:
+        train_size = min(max_train_examples, len(dataset_splits["train"]))
+        dataset_splits["train"] = dataset_splits["train"].select(range(train_size))
+
+    max_eval_examples = exp_config.get("max_eval_examples")
+    if max_eval_examples is not None:
+        val_size = min(max_eval_examples, len(dataset_splits["validation"]))
+        dataset_splits["validation"] = dataset_splits["validation"].select(range(val_size))
+
+    train_dataloader = DataLoader(
+        dataset_splits["train"],
+        batch_size=exp_config["per_device_train_batch_size"],
+        shuffle=True,
+        collate_fn=default_data_collator,
+    )
+    val_dataloader = DataLoader(
+        dataset_splits["validation"],
+        batch_size=exp_config["per_device_eval_batch_size"],
+        shuffle=False,
+        collate_fn=default_data_collator,
+    )
+    return train_dataloader, val_dataloader
 
 
 def prepare_training_components(accelerator, model, optimizer, train_dataloader, val_dataloader, lr_scheduler):
@@ -63,7 +99,13 @@ def prepare_training_components(accelerator, model, optimizer, train_dataloader,
     Use `accelerator.prepare(...)` to wrap the model, optimizer, dataloaders, and scheduler
     before training starts. Return the prepared objects in the same order.
     """
-    raise NotImplementedError("TODO(student): call accelerator.prepare(...).")
+    return accelerator.prepare(
+        model,
+        optimizer,
+        train_dataloader,
+        val_dataloader,
+        lr_scheduler,
+    )
 
 
 @torch.no_grad()
@@ -78,7 +120,29 @@ def run_validation(accelerator, model, dataloader) -> dict[str, float]:
        - `val_loss`
        - `val_perplexity`
     """
-    raise NotImplementedError("TODO(student): implement the validation loop.")
+    model.eval()
+    gathered_losses = []
+
+    for batch in dataloader:
+        outputs = model(**batch)
+        loss = outputs.loss.detach()
+        batch_size = batch["input_ids"].size(0)
+        gathered_loss = accelerator.gather_for_metrics(loss.repeat(batch_size))
+        gathered_losses.append(gathered_loss)
+
+    if not gathered_losses:
+        return {"val_loss": float("nan"), "val_perplexity": float("nan")}
+
+    val_loss = torch.cat(gathered_losses).mean().item()
+    try:
+        val_perplexity = math.exp(val_loss)
+    except OverflowError:
+        val_perplexity = float("inf")
+
+    return {
+        "val_loss": val_loss,
+        "val_perplexity": val_perplexity,
+    }
 
 
 def main() -> None:
@@ -160,7 +224,16 @@ def main() -> None:
                 5. Step the optimizer and scheduler.
                 6. Zero gradients.
                 """
-                raise NotImplementedError("TODO(student): implement the training step.")
+                outputs = model(**batch)
+                loss = outputs.loss
+                accelerator.backward(loss)
+
+                if accelerator.sync_gradients:
+                    accelerator.clip_grad_norm_(model.parameters(), exp_config["max_grad_norm"])
+
+                optimizer.step()
+                lr_scheduler.step()
+                optimizer.zero_grad()
 
             completed_steps += 1
             progress_bar.update(1)

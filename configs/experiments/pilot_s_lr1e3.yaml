@@ -1,5 +1,5 @@
 seed: 42
-output_dir: outputs/scaleup_m
+output_dir: outputs/pilot_s_lr1e3
 dataset_name: roneneldan/TinyStories
 dataset_config_name: null
 tokenizer_name_or_path: roneneldan/TinyStories-33M
@@ -7,12 +7,12 @@ block_size: 512
 num_preprocessing_workers: 1
 per_device_train_batch_size: 8
 per_device_eval_batch_size: 8
-gradient_accumulation_steps: 8
+gradient_accumulation_steps: 4
 learning_rate: 0.001
 weight_decay: 0.1
 warmup_ratio: 0.02
-max_train_steps: 3000
-eval_every_steps: 250
-save_every_steps: 1000
+max_train_steps: 1000
+eval_every_steps: 100
+save_every_steps: 500
 logging_every_steps: 10
 max_grad_norm: 1.0
